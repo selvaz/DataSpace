@@ -46,12 +46,17 @@ class Health:
 
 @dataclass(frozen=True)
 class SourceInfo:
-    """A Source's non-sensitive self-description.
+    """A Source's self-description, intended for logs and operators.
 
-    Deliberately excludes paths, DSNs and credentials: this is the shape
-    that can be shown to an operator, logged, or (later) handed to an agent
-    without leaking deployment details. An adapter that needs a path keeps
-    it privately; it never surfaces here.
+    The *shape* provides no field for a path, DSN or credential: an adapter
+    that needs one keeps it privately, and there is nowhere here to put it
+    even by accident.
+
+    That is a structural guarantee about the fields, **not** about their
+    contents. ``description`` is free text, so keeping secrets out of it is
+    the adapter's obligation — this type cannot enforce it. Write
+    descriptions as if they will be logged and shown to an agent, because
+    they will be.
 
     Attributes:
         name: Stable logical identifier, unique within a DataSpace.
@@ -61,6 +66,7 @@ class SourceInfo:
             capability-based lookup; DataSpace never interprets their
             meaning.
         description: Short human-readable note on what the endpoint holds.
+            Must not carry paths, DSNs or credentials.
     """
 
     name: str
@@ -96,7 +102,12 @@ class Source(Protocol):
         ...
 
     def describe(self) -> SourceInfo:
-        """Return this Source's non-sensitive self-description."""
+        """Return this Source's self-description.
+
+        The implementation is responsible for keeping the free-text
+        ``description`` free of paths, DSNs and credentials — see
+        :class:`SourceInfo`.
+        """
         ...
 
     def health(self) -> Health:

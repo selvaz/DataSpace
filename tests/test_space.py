@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import ast
+import pathlib
+
 import pytest
 
+import dataspace
 from dataspace import (
     DataSpace,
     DataSpaceError,
@@ -88,8 +92,12 @@ class TestDescribe:
         assert info.owner == "lazycrawler"
         assert info.capabilities == ("documents.search", "artifacts")
 
-    def test_describe_exposes_no_path_or_secret_fields(self, market):
-        """SourceInfo's whole point: safe to log or show an operator."""
+    def test_source_info_has_no_field_for_a_path_or_credential(self, market):
+        """A structural guarantee about the *fields* only.
+
+        Keeping the free-text ``description`` free of secrets is the
+        adapter's obligation; this type cannot enforce it.
+        """
         (info,) = DataSpace(market).describe()
         assert set(vars(info)) == {"name", "owner", "capabilities", "description"}
 
@@ -129,7 +137,43 @@ class TestHealth:
         assert report["market"].ready is True
         assert report["explodes"].ready is False
         assert "RuntimeError" in report["explodes"].detail
-        assert "connection refused" in report["explodes"].detail
+
+    def test_exception_message_is_withheld_from_the_report(self, make_source):
+        """Driver errors routinely carry DSNs and credentials; this report is logged."""
+        secret = "postgres://admin:hunter2@10.0.0.5/prod"
+        space = DataSpace(make_source("leaky", raises=RuntimeError(f"cannot connect to {secret}")))
+        report = space.health()
+        assert report["leaky"].ready is False
+        assert "RuntimeError" in report["leaky"].detail, "the exception type is still useful"
+        assert secret not in report["leaky"].detail
+        assert "hunter2" not in report["leaky"].detail
+
+    def test_exception_message_is_withheld_from_the_readiness_gate_too(self, make_source):
+        secret = "hunter2"
+        space = DataSpace(make_source("leaky", raises=RuntimeError(f"auth failed for {secret}")))
+        with pytest.raises(SourceNotReadyError) as exc:
+            space.require_ready()
+        assert secret not in str(exc.value)
+
+    def test_a_non_health_return_is_reported_as_unready(self, make_source):
+        """A forgotten ``return`` must not raise AttributeError out of the gate."""
+        broken = make_source("broken")
+        broken.health = lambda: None  # type: ignore[method-assign]
+        report = DataSpace(broken).health()
+        assert report["broken"].ready is False
+        assert "NoneType" in report["broken"].detail
+        assert "expected Health" in report["broken"].detail
+
+    def test_a_non_health_return_fails_the_gate_as_not_ready(self, make_source):
+        broken = make_source("broken")
+        broken.health = lambda: "ok"  # type: ignore[method-assign]
+        with pytest.raises(SourceNotReadyError) as exc:
+            DataSpace(broken).require_ready()
+        assert "str" in str(exc.value)
+
+    def test_health_always_returns_health_values(self, market, make_source):
+        space = DataSpace(market, make_source("raises", raises=ValueError("x")))
+        assert all(isinstance(h, Health) for h in space.health().values())
 
     def test_empty_space_reports_empty(self):
         assert DataSpace().health() == {}
@@ -161,6 +205,14 @@ class TestRequireReady:
     def test_can_gate_on_a_subset(self, market, make_source):
         space = DataSpace(market, make_source("unused", ready=False, detail="not needed here"))
         space.require_ready("market")  # must not raise
+
+    def test_subset_gate_does_not_contact_unrequested_sources(self, market, make_source):
+        """A job needing 1 of 3 sources must not touch — or wait on — the other 2."""
+        unused = make_source("unused")
+        space = DataSpace(market, unused)
+        space.require_ready("market")
+        assert market.health_calls == 1
+        assert unused.health_calls == 0
 
     def test_subset_gate_still_fails_on_its_own_targets(self, market, make_source):
         space = DataSpace(market, make_source("needed", ready=False, detail="down"))
@@ -195,16 +247,61 @@ class TestProtocolAndTypes:
             assert issubclass(error, DataSpaceError)
 
 
+#: Ecosystem packages the core must never import. Its whole premise is that
+#: adapters live in the repositories that own the data.
+FORBIDDEN_ROOTS = frozenset(
+    {
+        "lazytools",
+        "lazystats",
+        "lazyportfolio",
+        "lazycrawler",
+        "market_data_hub",
+        "lazyfin",
+        "lazypulse",
+        "lazybridge",
+    }
+)
+
+
+def forbidden_imports(source: str, forbidden: frozenset[str] = FORBIDDEN_ROOTS) -> list[str]:
+    """Return the forbidden module roots imported by ``source``.
+
+    Parses rather than greps: ``from lazytools import x`` is an import that
+    a substring search for ``"import lazytools"`` does not see.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found += [a.name.split(".")[0] for a in node.names if a.name.split(".")[0] in forbidden]
+        elif isinstance(node, ast.ImportFrom) and node.module:  # module is None for `from . import x`
+            root = node.module.split(".")[0]
+            if root in forbidden:
+                found.append(root)
+    return found
+
+
 class TestNoDomainCoupling:
     def test_package_imports_nothing_from_the_ecosystem(self):
         """The core must stay domain-agnostic: no adapter imports, ever."""
-        import pathlib
-
-        import dataspace
-
         package_dir = pathlib.Path(dataspace.__file__).parent
-        forbidden = ("lazytools", "lazystats", "lazyportfolio", "lazycrawler", "market_data_hub", "lazyfin")
-        for module in package_dir.glob("*.py"):
-            text = module.read_text(encoding="utf-8")
-            for name in forbidden:
-                assert f"import {name}" not in text, f"{module.name} imports {name}"
+        offenders = {
+            module.name: hits
+            for module in sorted(package_dir.glob("*.py"))
+            if (hits := forbidden_imports(module.read_text(encoding="utf-8")))
+        }
+        assert not offenders, f"core must stay domain-agnostic, found: {offenders}"
+
+    def test_the_check_catches_plain_imports(self):
+        assert forbidden_imports("import lazytools") == ["lazytools"]
+        assert forbidden_imports("import lazystats.regimes.core") == ["lazystats"]
+
+    def test_the_check_catches_from_imports(self):
+        """The form the previous substring-based check silently missed."""
+        assert forbidden_imports("from lazytools import registry") == ["lazytools"]
+        assert forbidden_imports("from lazycrawler.db import CrawlerDB") == ["lazycrawler"]
+
+    def test_the_check_ignores_allowed_imports(self):
+        assert forbidden_imports("import builtins\nfrom dataclasses import dataclass") == []
+
+    def test_the_check_ignores_relative_imports(self):
+        assert forbidden_imports("from . import errors") == []

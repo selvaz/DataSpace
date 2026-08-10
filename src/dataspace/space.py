@@ -137,28 +137,51 @@ class DataSpace:
         """
         return [s for s in self._sources.values() if capability in s.capabilities]
 
+    @staticmethod
+    def _check(source: Source) -> Health:
+        """Run one Source's health check, turning any misbehaviour into ``ready=False``.
+
+        The single place a Source's ``health()`` is invoked, so the guarantee
+        "a broken adapter is reported, never propagated" holds for every
+        caller — :meth:`health` and :meth:`require_ready` alike.
+
+        Two ways an adapter can misbehave, both contained here:
+
+        - it raises. Only the exception *type* reaches the report: driver and
+          connection errors routinely carry paths, DSNs and credentials in
+          their message, and this report is logged today and may be shown to
+          an agent later.
+        - it returns something that is not a :class:`Health` (``None`` from a
+          forgotten ``return``, say). Letting that through would raise
+          ``AttributeError`` out of the readiness gate, contradicting the
+          guarantee this method exists to provide.
+        """
+        try:
+            result = source.health()
+        except Exception as exc:  # reported as unready, never propagated
+            return Health(
+                ready=False,
+                detail=f"health() raised {type(exc).__name__} (message withheld: it may contain credentials)",
+            )
+        if not isinstance(result, Health):
+            return Health(
+                ready=False,
+                detail=f"health() returned {type(result).__name__}, expected Health",
+            )
+        return result
+
     def health(self) -> dict[str, Health]:
         """Check every registered Source and return all outcomes.
 
         Never raises on an unhealthy source: the point is to see the whole
-        picture at once. A Source whose ``health()`` itself raises is
-        reported as ``Health(ready=False, ...)`` naming the exception, so
-        one broken adapter cannot hide the state of the others.
+        picture at once, so one broken adapter cannot hide the state of the
+        others. See :meth:`_check` for how adapter misbehaviour is contained.
 
         Returns:
             One :class:`~dataspace.source.Health` per source, keyed by name,
             in registration order.
         """
-        results: dict[str, Health] = {}
-        for name, source in self._sources.items():
-            try:
-                results[name] = source.health()
-            except Exception as exc:  # reported as unready, never swallowed
-                results[name] = Health(
-                    ready=False,
-                    detail=f"health() raised {type(exc).__name__}: {exc}",
-                )
-        return results
+        return {name: self._check(source) for name, source in self._sources.items()}
 
     def require_ready(self, *names: str) -> None:
         """Assert that the named Sources (or all of them) are reachable.
@@ -168,12 +191,18 @@ class DataSpace:
         fixing one deployment problem at a time, one run at a time, is the
         failure mode this exists to avoid.
 
+        Only the named Sources are contacted. A job that needs two of five
+        registered sources should not fail, wait on, or even touch the other
+        three.
+
         Args:
             *names: Source names to check. Omit to check every registered
                 source.
 
         Raises:
-            UnknownSourceError: A named Source is not registered.
+            UnknownSourceError: A named Source is not registered. Raised
+                before any check runs, so a typo cannot silently gate on
+                nothing.
             SourceNotReadyError: At least one checked Source is not ready.
                 The message names every failing source and its detail.
         """
@@ -184,8 +213,8 @@ class DataSpace:
                     f"Unknown source {name!r}. Registered: {sorted(self._sources) or '(none)'}"
                 )
 
-        report = self.health()
-        failures = [(name, report[name]) for name in targets if not report[name].ready]
+        checked = [(name, self._check(self._sources[name])) for name in targets]
+        failures = [(name, health) for name, health in checked if not health.ready]
         if failures:
             lines = "\n".join(f"  - {name}: {health.detail}" for name, health in failures)
             raise SourceNotReadyError(f"{len(failures)} of {len(targets)} source(s) not ready:\n{lines}")

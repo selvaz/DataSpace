@@ -55,8 +55,16 @@ prevent. Failures are returned as `Health(ready=False, detail=...)`, never
 raised, so an aggregate report shows every source's state rather than
 stopping at the first exception.
 
-`SourceInfo` carries no paths, DSNs or credentials: it is the shape that can
-safely be logged, shown to an operator, or later handed to an agent.
+An adapter that misbehaves is contained rather than trusted: if `health()`
+raises, only the **exception type** reaches the report — driver and
+connection errors routinely carry DSNs and credentials in their message, and
+this report is logged. If it returns something that isn't a `Health`, that
+too becomes `ready=False` instead of an `AttributeError` escaping the gate.
+
+`SourceInfo` has no *field* for a path, DSN or credential, so there is
+nowhere to put one even by accident. That is a guarantee about the shape,
+not the contents: `description` is free text, and keeping secrets out of it
+is the adapter's obligation.
 
 ### `DataSpace`
 
@@ -68,7 +76,7 @@ safely be logged, shown to an operator, or later handed to an agent.
 | `describe()` | Every Source's `SourceInfo` |
 | `for_capability(cap)` | Sources declaring a capability |
 | `health()` | Check everything, report all outcomes |
-| `require_ready(*names)` | Readiness gate — raises unless reachable |
+| `require_ready(*names)` | Readiness gate — raises unless reachable; contacts **only** the named sources |
 
 Reading and publishing are *not* on `DataSpace`. They are per-domain APIs on
 the concrete adapter, reached through `source()` — so this layer never
