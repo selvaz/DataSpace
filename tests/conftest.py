@@ -18,7 +18,7 @@ from collections.abc import Callable
 
 import pytest
 
-from dataspace.source import Health, SourceInfo
+from lazydataspace.source import Health, SourceInfo
 
 
 class FakeSource:

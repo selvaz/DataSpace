@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dataspace"
+name = "lazydataspace"
 version = "0.1.0"
 description = "Typed composition root for cross-repository data sources"
 readme = "README.md"
@@ -34,7 +34,7 @@ Homepage   = "https://github.com/selvaz/DataSpace"
 Repository = "https://github.com/selvaz/DataSpace"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dataspace"]
+packages = ["src/lazydataspace"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -54,18 +54,18 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dataspace"]
+known-first-party = ["lazydataspace"]
 
 [tool.mypy]
 python_version = "3.11"
 # The core is small and new — strict from day one, unlike the older repos
 # that type-check in tiers. Run against the package:
-#     mypy src/dataspace --strict
+#     mypy src/lazydataspace --strict
 strict = true
 warn_unused_configs = true
 
 [tool.coverage.run]
-source = ["dataspace"]
+source = ["lazydataspace"]
 
 [tool.coverage.report]
 # A 200-line core with a fake-only suite has no excuse for gaps.

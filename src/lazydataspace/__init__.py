@@ -2,13 +2,13 @@
 
 Two primitives, no magic:
 
-- :class:`~dataspace.source.Source` — the protocol an owning repository
+- :class:`~lazydataspace.source.Source` — the protocol an owning repository
   implements to make one of its data endpoints registrable;
-- :class:`~dataspace.space.DataSpace` — an explicit collection of
+- :class:`~lazydataspace.space.DataSpace` — an explicit collection of
   already-configured Sources, with aggregate readiness checking.
 
 ```python
-from dataspace import DataSpace
+from lazydataspace import DataSpace
 
 space = DataSpace(market_source, crawler_source, stats_source)
 space.require_ready()                       # before the first write
@@ -24,14 +24,14 @@ built.
 
 from __future__ import annotations
 
-from dataspace.errors import (
+from lazydataspace.errors import (
     DataSpaceError,
     DuplicateSourceError,
     SourceNotReadyError,
     UnknownSourceError,
 )
-from dataspace.source import Health, Source, SourceInfo
-from dataspace.space import DataSpace
+from lazydataspace.source import Health, Source, SourceInfo
+from lazydataspace.space import DataSpace
 
 __version__ = "0.1.0"
 

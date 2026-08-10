@@ -4,7 +4,7 @@
 primitives, no runtime dependencies, no magic.
 
 ```python
-from dataspace import DataSpace
+from lazydataspace import DataSpace
 
 space = DataSpace(market_source, crawler_source, stats_source)
 space.require_ready()                              # before the first write
@@ -107,7 +107,7 @@ pytest tests/ -q
 ```
 
 ```bash
-mypy src/dataspace --strict
+mypy src/lazydataspace --strict
 ```
 
 ```bash

@@ -7,8 +7,8 @@ import pathlib
 
 import pytest
 
-import dataspace
-from dataspace import (
+import lazydataspace
+from lazydataspace import (
     DataSpace,
     DataSpaceError,
     DuplicateSourceError,
@@ -283,7 +283,7 @@ def forbidden_imports(source: str, forbidden: frozenset[str] = FORBIDDEN_ROOTS) 
 class TestNoDomainCoupling:
     def test_package_imports_nothing_from_the_ecosystem(self):
         """The core must stay domain-agnostic: no adapter imports, ever."""
-        package_dir = pathlib.Path(dataspace.__file__).parent
+        package_dir = pathlib.Path(lazydataspace.__file__).parent
         offenders = {
             module.name: hits
             for module in sorted(package_dir.glob("*.py"))

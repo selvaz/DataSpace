@@ -26,8 +26,8 @@ from __future__ import annotations
 # ``builtins.list[...]`` explicitly rather than resolving to the method.
 import builtins
 
-from dataspace.errors import DuplicateSourceError, SourceNotReadyError, UnknownSourceError
-from dataspace.source import Health, Source, SourceInfo
+from lazydataspace.errors import DuplicateSourceError, SourceNotReadyError, UnknownSourceError
+from lazydataspace.source import Health, Source, SourceInfo
 
 
 class DataSpace:
@@ -120,7 +120,7 @@ class DataSpace:
     def describe(self) -> builtins.list[SourceInfo]:
         """Return every Source's non-sensitive self-description.
 
-        Safe to log or display: :class:`~dataspace.source.SourceInfo`
+        Safe to log or display: :class:`~lazydataspace.source.SourceInfo`
         carries no paths, DSNs or credentials.
         """
         return [source.describe() for source in self._sources.values()]
@@ -178,7 +178,7 @@ class DataSpace:
         others. See :meth:`_check` for how adapter misbehaviour is contained.
 
         Returns:
-            One :class:`~dataspace.source.Health` per source, keyed by name,
+            One :class:`~lazydataspace.source.Health` per source, keyed by name,
             in registration order.
         """
         return {name: self._check(source) for name, source in self._sources.items()}

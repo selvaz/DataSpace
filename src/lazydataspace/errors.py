@@ -34,7 +34,7 @@ class UnknownSourceError(DataSpaceError):
 class SourceNotReadyError(DataSpaceError):
     """A readiness gate failed: one or more Sources are not reachable.
 
-    Raised by :meth:`~dataspace.space.DataSpace.require_ready`, typically
+    Raised by :meth:`~lazydataspace.space.DataSpace.require_ready`, typically
     at the start of a scheduled run, before anything is written.
     """
 
